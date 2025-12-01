@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
+import '../models/weather.dart';
+import '../services/weather_service.dart';
 
-class FavoritesScreen extends StatelessWidget {
+class FavoritesScreen extends StatefulWidget {
   final List<String> cities;
   final String selectedCity;
   final Function(String) onCitySelected;
@@ -16,24 +18,85 @@ class FavoritesScreen extends StatelessWidget {
     required this.onAddCity,
   });
 
-  // Моковые данные погоды для городов
-  Map<String, Map<String, dynamic>> get _weatherData => {
-    'Москва': {'temp': '+15°C', 'description': 'Ясно', 'icon': Icons.wb_sunny},
-    'Санкт-Петербург': {'temp': '+8°C', 'description': 'Облачно', 'icon': Icons.cloud},
-    'Казань': {'temp': '+12°C', 'description': 'Дождь', 'icon': Icons.water_drop},
-    'Новосибирск': {'temp': '+5°C', 'description': 'Снег', 'icon': Icons.ac_unit},
-    'Екатеринбург': {'temp': '+7°C', 'description': 'Пасмурно', 'icon': Icons.cloud},
-    'Нижний Новгород': {'temp': '+10°C', 'description': 'Ясно', 'icon': Icons.wb_sunny},
-    'Челябинск': {'temp': '+6°C', 'description': 'Облачно', 'icon': Icons.cloud},
-    'Самара': {'temp': '+11°C', 'description': 'Ясно', 'icon': Icons.wb_sunny},
-    'Омск': {'temp': '+3°C', 'description': 'Снег', 'icon': Icons.ac_unit},
-    'Ростов-на-Дону': {'temp': '+14°C', 'description': 'Ясно', 'icon': Icons.wb_sunny},
-    'Уфа': {'temp': '+9°C', 'description': 'Облачно', 'icon': Icons.cloud},
-    'Красноярск': {'temp': '+2°C', 'description': 'Снег', 'icon': Icons.ac_unit},
-    'Воронеж': {'temp': '+13°C', 'description': 'Ясно', 'icon': Icons.wb_sunny},
-    'Пермь': {'temp': '+4°C', 'description': 'Дождь', 'icon': Icons.water_drop},
-    'Волгоград': {'temp': '+16°C', 'description': 'Ясно', 'icon': Icons.wb_sunny},
-  };
+  @override
+  State<FavoritesScreen> createState() => _FavoritesScreenState();
+}
+
+class _FavoritesScreenState extends State<FavoritesScreen> {
+  final WeatherService _weatherService = WeatherService();
+  final Map<String, Weather> _weatherCache = {};
+  final Set<String> _loadingCities = {};
+
+  @override
+  void initState() {
+    super.initState();
+    _loadAllWeather();
+  }
+
+  @override
+  void didUpdateWidget(FavoritesScreen oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    // Загрузить погоду для новых городов
+    for (final city in widget.cities) {
+      if (!_weatherCache.containsKey(city) && !_loadingCities.contains(city)) {
+        _loadWeatherForCity(city);
+      }
+    }
+  }
+
+  Future<void> _loadAllWeather() async {
+    for (final city in widget.cities) {
+      _loadWeatherForCity(city);
+    }
+  }
+
+  Future<void> _loadWeatherForCity(String city) async {
+    if (_loadingCities.contains(city)) return;
+
+    setState(() {
+      _loadingCities.add(city);
+    });
+
+    try {
+      final weather = await _weatherService.getWeather(city);
+      if (mounted) {
+        setState(() {
+          _weatherCache[city] = weather;
+          _loadingCities.remove(city);
+        });
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() {
+          _loadingCities.remove(city);
+        });
+      }
+    }
+  }
+
+  IconData _getWeatherIcon(String? iconCode) {
+    if (iconCode == null) return Icons.help_outline;
+    switch (iconCode.substring(0, 2)) {
+      case '01':
+        return Icons.wb_sunny;
+      case '02':
+        return Icons.cloud_queue;
+      case '03':
+      case '04':
+        return Icons.cloud;
+      case '09':
+      case '10':
+        return Icons.water_drop;
+      case '11':
+        return Icons.thunderstorm;
+      case '13':
+        return Icons.ac_unit;
+      case '50':
+        return Icons.foggy;
+      default:
+        return Icons.wb_sunny;
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -45,12 +108,19 @@ class FavoritesScreen extends StatelessWidget {
         foregroundColor: Colors.white,
         actions: [
           IconButton(
+            icon: const Icon(Icons.refresh),
+            onPressed: () {
+              _weatherCache.clear();
+              _loadAllWeather();
+            },
+          ),
+          IconButton(
             icon: const Icon(Icons.add),
-            onPressed: onAddCity,
+            onPressed: widget.onAddCity,
           ),
         ],
       ),
-      body: cities.isEmpty
+      body: widget.cities.isEmpty
           ? const Center(
               child: Text(
                 'Нет избранных городов.\nНажмите + чтобы добавить.',
@@ -61,25 +131,28 @@ class FavoritesScreen extends StatelessWidget {
                 ),
               ),
             )
-          : ListView.builder(
-              padding: const EdgeInsets.all(16),
-              itemCount: cities.length,
-              itemBuilder: (context, index) {
-                final city = cities[index];
-                final weather = _weatherData[city] ?? {
-                  'temp': '+10°C',
-                  'description': 'Нет данных',
-                  'icon': Icons.help_outline,
-                };
-                return _buildCityCard(
-                  context: context,
-                  name: city,
-                  temp: weather['temp'] as String,
-                  description: weather['description'] as String,
-                  icon: weather['icon'] as IconData,
-                  isSelected: city == selectedCity,
-                );
+          : RefreshIndicator(
+              onRefresh: () async {
+                _weatherCache.clear();
+                await _loadAllWeather();
               },
+              child: ListView.builder(
+                padding: const EdgeInsets.all(16),
+                itemCount: widget.cities.length,
+                itemBuilder: (context, index) {
+                  final city = widget.cities[index];
+                  final weather = _weatherCache[city];
+                  final isLoading = _loadingCities.contains(city);
+
+                  return _buildCityCard(
+                    context: context,
+                    name: city,
+                    weather: weather,
+                    isLoading: isLoading,
+                    isSelected: city == widget.selectedCity,
+                  );
+                },
+              ),
             ),
     );
   }
@@ -87,16 +160,15 @@ class FavoritesScreen extends StatelessWidget {
   Widget _buildCityCard({
     required BuildContext context,
     required String name,
-    required String temp,
-    required String description,
-    required IconData icon,
+    Weather? weather,
+    required bool isLoading,
     required bool isSelected,
   }) {
     return Dismissible(
       key: Key(name),
       direction: DismissDirection.endToStart,
       onDismissed: (direction) {
-        onCityRemoved(name);
+        widget.onCityRemoved(name);
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text('$name удалён из избранного')),
         );
@@ -129,11 +201,17 @@ class FavoritesScreen extends StatelessWidget {
         ),
         child: ListTile(
           contentPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
-          leading: Icon(
-            icon,
-            size: 40,
-            color: const Color(0xFFFF9800),
-          ),
+          leading: isLoading
+              ? const SizedBox(
+                  width: 40,
+                  height: 40,
+                  child: CircularProgressIndicator(strokeWidth: 2),
+                )
+              : Icon(
+                  _getWeatherIcon(weather?.icon),
+                  size: 40,
+                  color: const Color(0xFFFF9800),
+                ),
           title: Text(
             name,
             style: const TextStyle(
@@ -143,20 +221,20 @@ class FavoritesScreen extends StatelessWidget {
             ),
           ),
           subtitle: Text(
-            description,
+            weather?.capitalizedDescription ?? 'Загрузка...',
             style: const TextStyle(
               color: Color(0xFF757575),
             ),
           ),
           trailing: Text(
-            temp,
+            weather?.temperatureString ?? '--',
             style: const TextStyle(
               fontSize: 24,
               fontWeight: FontWeight.bold,
               color: Color(0xFF2196F3),
             ),
           ),
-          onTap: () => onCitySelected(name),
+          onTap: () => widget.onCitySelected(name),
         ),
       ),
     );
