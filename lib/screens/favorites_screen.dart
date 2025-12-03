@@ -1,20 +1,12 @@
 import 'package:flutter/material.dart';
-import '../models/weather.dart';
-import '../services/weather_service.dart';
+import 'package:provider/provider.dart';
+import '../viewmodels/weather_viewmodel.dart';
 
 class FavoritesScreen extends StatefulWidget {
-  final List<String> cities;
-  final String selectedCity;
-  final Function(String) onCitySelected;
-  final Function(String) onCityRemoved;
   final VoidCallback onAddCity;
 
   const FavoritesScreen({
     super.key,
-    required this.cities,
-    required this.selectedCity,
-    required this.onCitySelected,
-    required this.onCityRemoved,
     required this.onAddCity,
   });
 
@@ -23,55 +15,13 @@ class FavoritesScreen extends StatefulWidget {
 }
 
 class _FavoritesScreenState extends State<FavoritesScreen> {
-  final WeatherService _weatherService = WeatherService();
-  final Map<String, Weather> _weatherCache = {};
-  final Set<String> _loadingCities = {};
-
   @override
   void initState() {
     super.initState();
-    _loadAllWeather();
-  }
-
-  @override
-  void didUpdateWidget(FavoritesScreen oldWidget) {
-    super.didUpdateWidget(oldWidget);
-    // Загрузить погоду для новых городов
-    for (final city in widget.cities) {
-      if (!_weatherCache.containsKey(city) && !_loadingCities.contains(city)) {
-        _loadWeatherForCity(city);
-      }
-    }
-  }
-
-  Future<void> _loadAllWeather() async {
-    for (final city in widget.cities) {
-      _loadWeatherForCity(city);
-    }
-  }
-
-  Future<void> _loadWeatherForCity(String city) async {
-    if (_loadingCities.contains(city)) return;
-
-    setState(() {
-      _loadingCities.add(city);
+    // Загружаем погоду для всех городов при открытии экрана
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      context.read<WeatherViewModel>().loadWeatherForAllCities();
     });
-
-    try {
-      final weather = await _weatherService.getWeather(city);
-      if (mounted) {
-        setState(() {
-          _weatherCache[city] = weather;
-          _loadingCities.remove(city);
-        });
-      }
-    } catch (e) {
-      if (mounted) {
-        setState(() {
-          _loadingCities.remove(city);
-        });
-      }
-    }
   }
 
   IconData _getWeatherIcon(String? iconCode) {
@@ -100,6 +50,8 @@ class _FavoritesScreenState extends State<FavoritesScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final viewModel = context.watch<WeatherViewModel>();
+
     return Scaffold(
       backgroundColor: const Color(0xFFE3F2FD),
       appBar: AppBar(
@@ -109,10 +61,7 @@ class _FavoritesScreenState extends State<FavoritesScreen> {
         actions: [
           IconButton(
             icon: const Icon(Icons.refresh),
-            onPressed: () {
-              _weatherCache.clear();
-              _loadAllWeather();
-            },
+            onPressed: () => viewModel.loadWeatherForAllCities(),
           ),
           IconButton(
             icon: const Icon(Icons.add),
@@ -120,7 +69,7 @@ class _FavoritesScreenState extends State<FavoritesScreen> {
           ),
         ],
       ),
-      body: widget.cities.isEmpty
+      body: viewModel.favoriteCities.isEmpty
           ? const Center(
               child: Text(
                 'Нет избранных городов.\nНажмите + чтобы добавить.',
@@ -132,24 +81,22 @@ class _FavoritesScreenState extends State<FavoritesScreen> {
               ),
             )
           : RefreshIndicator(
-              onRefresh: () async {
-                _weatherCache.clear();
-                await _loadAllWeather();
-              },
+              onRefresh: () => viewModel.loadWeatherForAllCities(),
               child: ListView.builder(
                 padding: const EdgeInsets.all(16),
-                itemCount: widget.cities.length,
+                itemCount: viewModel.favoriteCities.length,
                 itemBuilder: (context, index) {
-                  final city = widget.cities[index];
-                  final weather = _weatherCache[city];
-                  final isLoading = _loadingCities.contains(city);
+                  final city = viewModel.favoriteCities[index];
+                  final weather = viewModel.citiesWeather[city];
+                  final isLoading = weather == null;
 
                   return _buildCityCard(
                     context: context,
+                    viewModel: viewModel,
                     name: city,
                     weather: weather,
                     isLoading: isLoading,
-                    isSelected: city == widget.selectedCity,
+                    isSelected: city == viewModel.selectedCity,
                   );
                 },
               ),
@@ -159,8 +106,9 @@ class _FavoritesScreenState extends State<FavoritesScreen> {
 
   Widget _buildCityCard({
     required BuildContext context,
+    required WeatherViewModel viewModel,
     required String name,
-    Weather? weather,
+    dynamic weather,
     required bool isLoading,
     required bool isSelected,
   }) {
@@ -168,7 +116,7 @@ class _FavoritesScreenState extends State<FavoritesScreen> {
       key: Key(name),
       direction: DismissDirection.endToStart,
       onDismissed: (direction) {
-        widget.onCityRemoved(name);
+        viewModel.removeCity(name);
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text('$name удалён из избранного')),
         );
@@ -234,7 +182,7 @@ class _FavoritesScreenState extends State<FavoritesScreen> {
               color: Color(0xFF2196F3),
             ),
           ),
-          onTap: () => widget.onCitySelected(name),
+          onTap: () => viewModel.selectCity(name),
         ),
       ),
     );

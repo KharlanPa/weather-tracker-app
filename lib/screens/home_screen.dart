@@ -1,55 +1,9 @@
 import 'package:flutter/material.dart';
-import '../models/weather.dart';
-import '../services/weather_service.dart';
+import 'package:provider/provider.dart';
+import '../viewmodels/weather_viewmodel.dart';
 
-class HomeScreen extends StatefulWidget {
-  final String selectedCity;
-
-  const HomeScreen({super.key, required this.selectedCity});
-
-  @override
-  State<HomeScreen> createState() => _HomeScreenState();
-}
-
-class _HomeScreenState extends State<HomeScreen> {
-  final WeatherService _weatherService = WeatherService();
-  Weather? _weather;
-  bool _isLoading = true;
-  String? _error;
-
-  @override
-  void initState() {
-    super.initState();
-    _loadWeather();
-  }
-
-  @override
-  void didUpdateWidget(HomeScreen oldWidget) {
-    super.didUpdateWidget(oldWidget);
-    if (oldWidget.selectedCity != widget.selectedCity) {
-      _loadWeather();
-    }
-  }
-
-  Future<void> _loadWeather() async {
-    setState(() {
-      _isLoading = true;
-      _error = null;
-    });
-
-    try {
-      final weather = await _weatherService.getWeather(widget.selectedCity);
-      setState(() {
-        _weather = weather;
-        _isLoading = false;
-      });
-    } catch (e) {
-      setState(() {
-        _error = 'Не удалось загрузить погоду';
-        _isLoading = false;
-      });
-    }
-  }
+class HomeScreen extends StatelessWidget {
+  const HomeScreen({super.key});
 
   IconData _getWeatherIcon(String iconCode) {
     switch (iconCode.substring(0, 2)) {
@@ -76,6 +30,8 @@ class _HomeScreenState extends State<HomeScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final viewModel = context.watch<WeatherViewModel>();
+
     return Scaffold(
       backgroundColor: const Color(0xFFE3F2FD),
       appBar: AppBar(
@@ -85,32 +41,32 @@ class _HomeScreenState extends State<HomeScreen> {
         actions: [
           IconButton(
             icon: const Icon(Icons.refresh),
-            onPressed: _loadWeather,
+            onPressed: () => viewModel.loadWeatherForSelectedCity(),
           ),
         ],
       ),
-      body: _buildBody(),
+      body: _buildBody(context, viewModel),
     );
   }
 
-  Widget _buildBody() {
-    if (_isLoading) {
+  Widget _buildBody(BuildContext context, WeatherViewModel viewModel) {
+    if (viewModel.isLoadingWeather) {
       return const Center(
         child: CircularProgressIndicator(),
       );
     }
 
-    if (_error != null) {
+    if (viewModel.error != null) {
       return Center(
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
             const Icon(Icons.error_outline, size: 64, color: Colors.red),
             const SizedBox(height: 16),
-            Text(_error!, style: const TextStyle(fontSize: 18)),
+            Text(viewModel.error!, style: const TextStyle(fontSize: 18)),
             const SizedBox(height: 16),
             ElevatedButton(
-              onPressed: _loadWeather,
+              onPressed: () => viewModel.loadWeatherForSelectedCity(),
               child: const Text('Повторить'),
             ),
           ],
@@ -118,12 +74,13 @@ class _HomeScreenState extends State<HomeScreen> {
       );
     }
 
-    if (_weather == null) {
+    final weather = viewModel.currentWeather;
+    if (weather == null) {
       return const Center(child: Text('Нет данных'));
     }
 
     return RefreshIndicator(
-      onRefresh: _loadWeather,
+      onRefresh: () => viewModel.loadWeatherForSelectedCity(),
       child: SingleChildScrollView(
         physics: const AlwaysScrollableScrollPhysics(),
         child: Padding(
@@ -133,7 +90,7 @@ class _HomeScreenState extends State<HomeScreen> {
               const SizedBox(height: 40),
               // Название города
               Text(
-                _weather!.cityName,
+                weather.cityName,
                 style: const TextStyle(
                   fontSize: 32,
                   fontWeight: FontWeight.bold,
@@ -144,7 +101,7 @@ class _HomeScreenState extends State<HomeScreen> {
 
               // Иконка погоды
               Icon(
-                _getWeatherIcon(_weather!.icon),
+                _getWeatherIcon(weather.icon),
                 size: 100,
                 color: const Color(0xFFFF9800),
               ),
@@ -152,7 +109,7 @@ class _HomeScreenState extends State<HomeScreen> {
 
               // Температура
               Text(
-                _weather!.temperatureString,
+                weather.temperatureString,
                 style: const TextStyle(
                   fontSize: 64,
                   fontWeight: FontWeight.w300,
@@ -163,7 +120,7 @@ class _HomeScreenState extends State<HomeScreen> {
 
               // Описание погоды
               Text(
-                _weather!.capitalizedDescription,
+                weather.capitalizedDescription,
                 style: const TextStyle(
                   fontSize: 24,
                   color: Color(0xFF757575),
@@ -188,9 +145,9 @@ class _HomeScreenState extends State<HomeScreen> {
                 child: Row(
                   mainAxisAlignment: MainAxisAlignment.spaceAround,
                   children: [
-                    _buildInfoItem(Icons.water_drop, '${_weather!.humidity}%', 'Влажность'),
-                    _buildInfoItem(Icons.air, '${_weather!.windSpeed.round()} м/с', 'Ветер'),
-                    _buildInfoItem(Icons.speed, '${_weather!.pressure}', 'Давление'),
+                    _buildInfoItem(Icons.water_drop, '${weather.humidity}%', 'Влажность'),
+                    _buildInfoItem(Icons.air, '${weather.windSpeed.round()} м/с', 'Ветер'),
+                    _buildInfoItem(Icons.speed, '${weather.pressure}', 'Давление'),
                   ],
                 ),
               ),

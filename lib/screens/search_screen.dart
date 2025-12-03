@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
-import '../services/weather_service.dart';
+import 'package:provider/provider.dart';
+import '../viewmodels/weather_viewmodel.dart';
 
 class SearchScreen extends StatefulWidget {
   const SearchScreen({super.key});
@@ -11,7 +12,6 @@ class SearchScreen extends StatefulWidget {
 
 class _SearchScreenState extends State<SearchScreen> {
   final TextEditingController _searchController = TextEditingController();
-  final WeatherService _weatherService = WeatherService();
   List<String> _searchResults = [];
   bool _isLoading = false;
   Timer? _debounceTimer;
@@ -33,7 +33,8 @@ class _SearchScreenState extends State<SearchScreen> {
 
     _debounceTimer = Timer(const Duration(milliseconds: 500), () async {
       try {
-        final results = await _weatherService.searchCities(query);
+        final viewModel = context.read<WeatherViewModel>();
+        final results = await viewModel.searchCities(query);
         if (mounted) {
           setState(() {
             _searchResults = results;
