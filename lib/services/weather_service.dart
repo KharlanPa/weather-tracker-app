@@ -33,7 +33,10 @@ class WeatherService {
     if (response.statusCode == 200) {
       final List<dynamic> json = jsonDecode(response.body);
       return json.map((city) {
-        final name = city['name'] as String;
+        // Пытаемся получить русское название из local_names
+        final localNames = city['local_names'] as Map<String, dynamic>?;
+        final ruName = localNames?['ru'] as String?;
+        final name = ruName ?? city['name'] as String;
         final country = city['country'] as String;
         return '$name, $country';
       }).toList();
